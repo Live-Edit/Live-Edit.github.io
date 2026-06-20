@@ -1,0 +1,2683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveEdit: Towards Real-Time Diffusion-Based Streaming Video Editing | ECCV 2026</title>
+    <meta name="description" content="A real-time diffusion-based streaming video editing framework with causal editing, three-stage distillation, and AR-oriented mask caching.">
+    <link rel="icon" href="assets/liveedit/logo.png">
+    
+    <style>
+        /* --- VARIABLES & THEME --- */
+        :root {
+            --bg-body: #fdfdfd;
+            --bg-surface: #ffffff;
+            --bg-surface-alt: #f7f7f9;
+            --text-main: #1a1a1a;
+            --text-muted: #666666;
+            --primary: #2c3e50; /* Deep Slate */
+            --accent: #3b82f6; /* Academic Blue */
+            --accent-soft: #eef4ff;
+            --border: rgba(0,0,0,0.08);
+            --shadow: 0 4px 20px rgba(0,0,0,0.04);
+            --shadow-hover: 0 8px 30px rgba(0,0,0,0.08);
+            --font-serif: "New York", "Times New Roman", Times, serif;
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --radius-sm: 6px;
+            --radius-md: 12px;
+            --radius-lg: 20px;
+            --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            --nav-height: 60px;
+        }
+
+        [data-theme="dark"] {
+            --bg-body: #111111;
+            --bg-surface: #1a1a1a;
+            --bg-surface-alt: #222222;
+            --text-main: #eeeeee;
+            --text-muted: #aaaaaa;
+            --primary: #e0e0e0;
+            --accent: #60a5fa;
+            --accent-soft: #1e293b;
+            --border: rgba(255,255,255,0.1);
+            --shadow: 0 4px 20px rgba(0,0,0,0.3);
+            --shadow-hover: 0 8px 30px rgba(0,0,0,0.5);
+        }
+
+        /* --- GLOBAL RESET --- */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            font-family: var(--font-sans);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        a { color: var(--accent); text-decoration: none; transition: var(--transition); }
+        a:hover { opacity: 0.8; }
+        
+        /* --- UTILITIES --- */
+        .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+        .section { padding: 80px 0; border-bottom: 1px solid var(--border); }
+        .section:last-child { border-bottom: none; }
+        .fade-in-section { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; will-change: opacity, visibility; }
+        .fade-in-section.is-visible { opacity: 1; transform: none; }
+        
+        h1, h2, h3 { font-family: var(--font-serif); color: var(--text-main); font-weight: 600; letter-spacing: -0.02em; }
+        h1 { font-size: 3rem; line-height: 1.1; margin-bottom: 16px; }
+        h2 { font-size: 2rem; margin-bottom: 24px; text-align: center; }
+        h3 { font-size: 1.25rem; margin-bottom: 12px; }
+        p { margin-bottom: 16px; color: var(--text-muted); font-size: 1.05rem; }
+
+        /* --- NAVIGATION --- */
+        .navbar {
+            position: sticky; top: 0; z-index: 100;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            height: var(--nav-height);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 24px;
+        }
+        [data-theme="dark"] .navbar { background: rgba(17, 17, 17, 0.8); }
+        .nav-links { display: flex; gap: 20px; font-size: 0.9rem; font-weight: 500; }
+        .nav-links a { color: var(--text-main); opacity: 0.7; }
+        .nav-links a:hover { opacity: 1; color: var(--accent); }
+        .theme-toggle { cursor: pointer; background: none; border: none; font-size: 1.2rem; color: var(--text-main); }
+        .mobile-menu-btn { display: none; background: none; border: none; font-size: 1.5rem; color: var(--text-main); }
+
+        /* --- HERO --- */
+        .hero { padding: 120px 0 80px; text-align: center; }
+        .venue { 
+            display: inline-block; font-weight: 600; color: var(--accent); 
+            background: var(--accent-soft); padding: 4px 12px; border-radius: 20px; 
+            font-size: 0.9rem; margin-bottom: 24px; letter-spacing: 0.5px;
+        }
+        .tagline { font-size: 1.3rem; max-width: 700px; margin: 0 auto 32px; color: var(--text-muted); }
+        .pills { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-bottom: 40px; }
+        .pill { 
+            font-size: 0.85rem; padding: 6px 14px; border-radius: 20px; 
+            border: 1px solid var(--border); background: var(--bg-surface-alt); color: var(--text-muted);
+        }
+        .btn-group { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 12px 24px; border-radius: var(--radius-md); font-weight: 600;
+            transition: var(--transition); border: 1px solid transparent; cursor: pointer;
+        }
+        .btn-primary { background: var(--text-main); color: var(--bg-body); }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); opacity: 0.95; }
+        .btn-outline { background: transparent; border-color: var(--border); color: var(--text-main); }
+        .btn-outline:hover { background: var(--bg-surface-alt); border-color: var(--text-main); }
+
+        /* --- AUTHORS & AFFILIATIONS --- */
+        .authors {
+            margin-bottom: 8px;
+            font-size: 1.25rem;
+            font-weight: 500;
+        }
+        .author-block {
+            display: inline-block;
+            margin: 0 8px;
+        }
+        .author-block a {
+            color: var(--text-main); 
+            text-decoration: none;
+        }
+        .author-block a:hover {
+            color: var(--accent);
+            text-decoration: underline;
+        }
+        
+        .affiliations {
+            margin-bottom: 24px;
+            font-size: 1rem;
+            color: var(--text-muted);
+        }
+        .affil-block {
+            display: inline-block;
+            margin: 0 10px;
+        }
+        sup {
+            vertical-align: super;
+            font-size: smaller;
+        }
+
+        /* --- TEASER --- */
+        .teaser-container { background: #000; border-radius: var(--radius-lg); overflow: hidden; position: relative; aspect-ratio: 960/427; margin-bottom: 20px; box-shadow: var(--shadow); }
+        .teaser-placeholder {
+            width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #2c3e50 0%, #000000 100%); color: white;
+            text-align: center; padding: 20px;
+        }
+        .play-overlay {
+            width: 80px; height: 80px; background: rgba(255,255,255,0.2); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.3); transition: var(--transition); cursor: pointer;
+        }
+        .play-overlay:hover { background: rgba(255,255,255,0.3); transform: scale(1.1); }
+        .play-icon { width: 0; height: 0; border-top: 12px solid transparent; border-bottom: 12px solid transparent; border-left: 20px solid white; margin-left: 4px; }
+        
+        /* --- ABSTRACT & METHOD --- */
+        .abstract-box { max-width: 800px; margin: 0 auto; text-align: justify; padding: 30px; background: var(--bg-surface-alt); border-radius: var(--radius-md); border: 1px solid var(--border); }
+        
+        .method-diagram {
+            display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 20px; margin: 40px 0; padding: 20px;
+            background: var(--bg-surface-alt); border-radius: var(--radius-md); border: 1px solid var(--border);
+        }
+        .diagram-block {
+            background: var(--bg-surface); border: 1px solid var(--border); padding: 15px 25px; border-radius: 8px;
+            font-weight: 600; font-size: 0.9rem; box-shadow: var(--shadow); text-align: center; min-width: 120px;
+        }
+        .diagram-arrow { color: var(--text-muted); font-size: 1.5rem; }
+        
+        .technique-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-top: 40px; }
+        .tech-card { padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-surface); transition: var(--transition); }
+        .tech-card:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
+        .tech-title { font-weight: 700; color: var(--accent); margin-bottom: 12px; display: block; }
+        .tech-list { list-style: none; padding-left: 0; }
+        .tech-list li { position: relative; padding-left: 18px; margin-bottom: 8px; font-size: 0.95rem; color: var(--text-muted); }
+        .tech-list li::before { content: "•"; color: var(--accent); position: absolute; left: 0; top: 0; }
+
+        /* --- RESULTS GALLERY (MODIFIED SECTION) --- */
+
+        .gallery-controls { display: flex; flex-direction: column; gap: 16px; margin-bottom: 30px; }
+
+        .filter-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        .filter-pills { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+        .filter-pill {
+            padding: 6px 14px; border: 1px solid var(--border); border-radius: 20px; font-size: 0.85rem;
+            cursor: pointer; white-space: nowrap; transition: var(--transition);
+        }
+        .filter-pill.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+        .gallery-search {
+            padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg-surface);
+            font-family: var(--font-sans); width: 220px;
+        }
+
+        /* --- NEW GALLERY LAYOUT --- */
+        
+        .gallery-grid {
+            display: flex;
+            flex-direction: column; /* 一行一个任务 */
+            gap: 20px;
+        }
+
+        .gallery-pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin: 28px auto 0;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.055);
+            width: fit-content;
+            max-width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .gallery-page-btn {
+            min-width: 38px;
+            height: 38px;
+            padding: 0 12px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: var(--bg-surface);
+            color: var(--text-main);
+            font-family: var(--font-sans);
+            font-weight: 700;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .gallery-page-btn:hover:not(:disabled) {
+            border-color: var(--accent);
+            color: var(--accent);
+            transform: translateY(-1px);
+        }
+
+        .gallery-page-btn.active {
+            border-color: transparent;
+            background: var(--text-main);
+            color: var(--bg-body);
+            cursor: default;
+        }
+
+        .gallery-page-btn:disabled {
+            cursor: default;
+            opacity: 0.42;
+        }
+
+        .gallery-page-status {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-weight: 700;
+            padding: 0 4px;
+            white-space: nowrap;
+        }
+
+        .gallery-page-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            flex-wrap: wrap;
+        }
+
+
+        .task-row {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 20px;
+            transition: var(--transition);
+        }
+        .task-row:hover {
+            box-shadow: var(--shadow-hover);
+            border-color: var(--accent);
+        }
+
+        .task-row-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .task-info { display: flex; flex-direction: column; gap: 4px; }
+        .task-shorthand {
+            font-family: monospace; font-weight: 700; color: var(--accent);
+            background: var(--accent-soft); padding: 2px 8px; border-radius: 6px; font-size: 0.9rem;
+            width: fit-content; margin-bottom: 4px;
+        }
+        .task-desc { font-weight: 600; font-size: 1.05rem; color: var(--text-main); }
+        .task-meta { font-size: 0.85rem; color: var(--text-muted); }
+
+
+        .video-strip {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr); /* 核心修改：4列 */
+            gap: 16px;
+            width: 100%;
+        }
+
+ 
+        .video-strip-5 {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            width: 100%;
+        }
+
+        .video-strip-6 {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 12px;
+            width: 100%;
+        }
+
+        .video-strip-7 {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 12px;
+            width: 100%;
+        }
+
+        .video-slot {
+            aspect-ratio: 16/9;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(0,0,0,0.1);
+            position: relative;
+        }
+
+        .task-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .slot-media {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+            background: #05050a;
+        }
+
+        .video-empty {
+            width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--bg-surface-alt); color: var(--text-muted);
+            font-size: 0.8rem; border: 1px dashed var(--border);
+        }
+
+        .video-label {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            text-align: center;
+            padding: 6px 8px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            pointer-events: none; /* 让点击穿透文字直达视频控件 */
+        }
+
+           
+        @media (max-width: 900px) {
+            .video-strip {
+                display: flex;
+                overflow-x: auto;
+                padding-bottom: 10px;
+                scroll-snap-type: x mandatory;
+            }
+            .video-slot {
+                min-width: 240px;
+                scroll-snap-align: start;
+            }
+        }
+        
+        /* --- RESULTS TABLES --- */
+        .table-container { overflow-x: auto; margin-bottom: 30px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; text-align: left; }
+        th, td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+        th { background: var(--bg-surface-alt); font-weight: 600; font-family: var(--font-serif); }
+        tr:last-child td { border-bottom: none; }
+        tr:nth-child(even) { background: rgba(0,0,0,0.02); }
+        .best { font-weight: bold; color: var(--text-main); }
+        .second { text-decoration: underline; }
+
+        /* --- ABLATIONS & DATASET --- */
+        .ablation-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 30px; }
+        .att-map-placeholder { 
+            height: 120px; background-image: repeating-linear-gradient(45deg, var(--bg-surface-alt) 25%, transparent 25%, transparent 75%, var(--bg-surface-alt) 75%, var(--bg-surface-alt)), repeating-linear-gradient(45deg, var(--bg-surface-alt) 25%, var(--bg-surface) 25%, var(--bg-surface) 75%, var(--bg-surface-alt) 75%, var(--bg-surface-alt));
+            background-position: 0 0, 10px 10px; background-size: 20px 20px; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-top: 12px;
+        }
+
+        /* --- CITATION --- */
+        .bibtex-box { 
+            background: var(--bg-surface-alt); padding: 20px; border-radius: var(--radius-md); 
+            font-family: monospace; font-size: 0.85rem; overflow-x: auto; position: relative; border: 1px solid var(--border);
+        }
+        .copy-btn { 
+            position: absolute; top: 10px; right: 10px; padding: 4px 10px; font-size: 0.8rem;
+            background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;
+        }
+
+        /* --- FAQ --- */
+        .faq-item { border-bottom: 1px solid var(--border); padding: 16px 0; }
+        .faq-q { font-weight: 600; cursor: pointer; display: flex; justify-content: space-between; }
+        .faq-a { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; color: var(--text-muted); font-size: 0.95rem; }
+        .faq-item.open .faq-a { max-height: 200px; margin-top: 8px; }
+
+        /* --- FOOTER --- */
+        footer { background: var(--bg-surface-alt); padding: 60px 0; text-align: center; font-size: 0.9rem; color: var(--text-muted); border-top: 1px solid var(--border); }
+        
+        /* --- MEDIA QUERIES --- */
+        @media (max-width: 768px) {
+            h1 { font-size: 2.2rem; }
+            .nav-links { display: none; }
+            .mobile-menu-btn { display: block; }
+            .method-diagram { flex-direction: column; }
+            .diagram-arrow { transform: rotate(90deg); }
+            .ablation-grid { grid-template-columns: 1fr; }
+            .btn-group { flex-direction: column; width: 100%; }
+            .btn { width: 100%; }
+        }
+
+        /* --- KREA-INSPIRED VISUAL REFRESH --- */
+        :root {
+            --bg-body: #05050a;
+            --bg-surface: rgba(255, 255, 255, 0.075);
+            --bg-surface-alt: rgba(255, 255, 255, 0.045);
+            --text-main: #f7f7fb;
+            --text-muted: #aeb2c2;
+            --primary: #ffffff;
+            --accent: #a78bfa;
+            --accent-2: #22d3ee;
+            --accent-3: #ff7ad9;
+            --accent-soft: rgba(167, 139, 250, 0.16);
+            --border: rgba(255, 255, 255, 0.14);
+            --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+            --shadow-hover: 0 28px 90px rgba(34, 211, 238, 0.18);
+            --font-serif: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            --radius-sm: 12px;
+            --radius-md: 20px;
+            --radius-lg: 34px;
+            --nav-height: 72px;
+            --transition: all 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        [data-theme="light"] {
+            --bg-body: #f5f3ef;
+            --bg-surface: rgba(255, 255, 255, 0.78);
+            --bg-surface-alt: rgba(255, 255, 255, 0.54);
+            --text-main: #101018;
+            --text-muted: #5f6472;
+            --primary: #101018;
+            --accent: #6d5dfc;
+            --accent-2: #0891b2;
+            --accent-3: #db2777;
+            --accent-soft: rgba(109, 93, 252, 0.12);
+            --border: rgba(16, 16, 24, 0.11);
+            --shadow: 0 24px 80px rgba(32, 28, 54, 0.12);
+            --shadow-hover: 0 28px 90px rgba(109, 93, 252, 0.18);
+        }
+
+        body {
+            position: relative;
+            isolation: isolate;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at 18% 8%, rgba(167, 139, 250, 0.32), transparent 28vw),
+                radial-gradient(circle at 86% 10%, rgba(34, 211, 238, 0.23), transparent 26vw),
+                radial-gradient(circle at 48% 46%, rgba(255, 122, 217, 0.12), transparent 34vw),
+                linear-gradient(180deg, var(--bg-body) 0%, #070711 46%, var(--bg-body) 100%);
+        }
+
+        body[data-theme="light"] {
+            background:
+                radial-gradient(circle at 12% 10%, rgba(109, 93, 252, 0.22), transparent 28vw),
+                radial-gradient(circle at 88% 8%, rgba(8, 145, 178, 0.18), transparent 27vw),
+                radial-gradient(circle at 44% 42%, rgba(219, 39, 119, 0.10), transparent 34vw),
+                linear-gradient(180deg, #fbfaf7 0%, var(--bg-body) 56%, #ece9e2 100%);
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.28;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.075) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.075) 1px, transparent 1px);
+            background-size: 72px 72px;
+            mask-image: linear-gradient(to bottom, black 0%, transparent 75%);
+        }
+
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background:
+                linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.06) 42%, transparent 50%),
+                radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.10), transparent 46%);
+            mix-blend-mode: screen;
+        }
+
+        .navbar,
+        .section,
+        footer {
+            position: relative;
+            z-index: 1;
+        }
+
+        ::selection {
+            background: rgba(167, 139, 250, 0.42);
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1240px;
+            padding: 0 28px;
+        }
+
+        .section {
+            position: relative;
+            padding: 96px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto auto 50%;
+            width: min(920px, 82vw);
+            height: 1px;
+            transform: translateX(-50%);
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+            opacity: 0.45;
+        }
+
+        h1, h2, h3 {
+            font-family: var(--font-sans);
+            letter-spacing: -0.05em;
+        }
+
+        h2 {
+            margin-bottom: 30px;
+            font-size: clamp(2.25rem, 5vw, 4.25rem);
+            line-height: 0.95;
+        }
+
+        h2::after {
+            content: "";
+            display: block;
+            width: 88px;
+            height: 3px;
+            margin: 18px auto 0;
+            border-radius: 999px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--accent-3));
+            box-shadow: 0 0 24px rgba(167, 139, 250, 0.55);
+        }
+
+        p {
+            color: var(--text-muted);
+        }
+
+        a {
+            color: var(--accent-2);
+        }
+
+        .navbar {
+            top: 16px;
+            width: min(1180px, calc(100% - 32px));
+            height: var(--nav-height);
+            margin: 0 auto;
+            padding: 0 16px 0 22px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: linear-gradient(90deg, transparent 0 66px, rgba(9, 9, 16, 0.32) 82px, rgba(9, 9, 16, 0.66) 118px);
+            box-shadow: 0 18px 60px rgba(0, 0, 0, 0.26);
+        }
+
+        [data-theme="dark"] .navbar {
+            background: linear-gradient(90deg, transparent 0 66px, rgba(9, 9, 16, 0.32) 82px, rgba(9, 9, 16, 0.66) 118px);
+        }
+
+        [data-theme="light"] .navbar {
+            background: linear-gradient(90deg, transparent 0 66px, rgba(255, 255, 255, 0.34) 82px, rgba(255, 255, 255, 0.68) 118px);
+        }
+
+        .brand-mark {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-main);
+            font-size: 1rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+        }
+
+        .brand-logo {
+            width: 32px;
+            height: 32px;
+            display: block;
+            object-fit: contain;
+            box-shadow: 0 0 28px rgba(167, 139, 250, 0.45);
+        }
+
+        .nav-links {
+            align-items: center;
+            gap: 4px;
+            padding: 5px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        .nav-links a {
+            padding: 8px 13px;
+            border-radius: 999px;
+            color: var(--text-main);
+            opacity: 0.72;
+        }
+
+        .nav-links a:hover {
+            background: rgba(255, 255, 255, 0.10);
+            color: var(--text-main);
+            opacity: 1;
+        }
+
+        .theme-toggle,
+        .mobile-menu-btn {
+            width: 42px;
+            height: 42px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.07);
+            color: var(--text-main);
+            transition: var(--transition);
+        }
+
+        .theme-toggle:hover,
+        .mobile-menu-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 28px rgba(34, 211, 238, 0.20);
+        }
+
+        .hero {
+            isolation: isolate;
+            min-height: 92vh;
+            display: grid;
+            align-items: center;
+            padding: 150px 0 92px;
+            overflow: hidden;
+        }
+
+        .hero::before,
+        .hero::after {
+            content: "";
+            position: absolute;
+            pointer-events: none;
+            border-radius: 999px;
+            filter: blur(10px);
+        }
+
+        .hero::before {
+            inset: 112px 4vw 40px;
+            z-index: 0;
+            width: auto;
+            height: auto;
+            transform: none;
+            border-radius: 48px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.035)),
+                radial-gradient(circle at 24% 18%, rgba(167, 139, 250, 0.22), transparent 34%),
+                radial-gradient(circle at 76% 24%, rgba(34, 211, 238, 0.18), transparent 32%);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            opacity: 0.72;
+            filter: none;
+            mask-image: none;
+        }
+
+        .hero::after {
+            right: -160px;
+            bottom: 8%;
+            z-index: 0;
+            width: 380px;
+            height: 380px;
+            background: radial-gradient(circle, rgba(34, 211, 238, 0.22), transparent 65%);
+        }
+
+        @keyframes slowSpin {
+            to { transform: translateX(-50%) rotate(360deg); }
+        }
+
+        .hero .container {
+            position: relative;
+            z-index: 2;
+            max-width: 1180px;
+        }
+
+        .hero-results-bg {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 22px;
+            opacity: 0.55;
+            transform: rotate(-3deg) scale(1.08);
+        }
+
+        .hero-results-row {
+            display: flex;
+            width: max-content;
+            gap: 18px;
+            animation: heroMarquee 52s linear infinite;
+            will-change: transform;
+        }
+
+        .hero-results-row:nth-child(2) {
+            animation-duration: 64s;
+            animation-direction: reverse;
+            margin-left: -160px;
+        }
+
+        .hero-results-row:nth-child(3) {
+            animation-duration: 58s;
+            margin-left: -70px;
+        }
+
+        .hero-result-card {
+            width: clamp(220px, 20vw, 360px);
+            aspect-ratio: 16 / 9;
+            flex: 0 0 auto;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.07);
+            box-shadow: 0 22px 80px rgba(0, 0, 0, 0.36);
+        }
+
+        .hero-result-card video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            filter: saturate(1.08) contrast(1.05) brightness(0.82);
+        }
+
+        @keyframes heroMarquee {
+            from { transform: translateX(0); }
+            to { transform: translateX(-50%); }
+        }
+
+        .hero-results-bg::after {
+            content: "";
+            position: absolute;
+            inset: -8%;
+            background:
+                linear-gradient(90deg, rgba(5, 5, 10, 0.95) 0%, rgba(5, 5, 10, 0.30) 26%, rgba(5, 5, 10, 0.28) 70%, rgba(5, 5, 10, 0.92) 100%),
+                linear-gradient(180deg, rgba(5, 5, 10, 0.82) 0%, rgba(5, 5, 10, 0.36) 44%, rgba(5, 5, 10, 0.90) 100%),
+                radial-gradient(circle at 50% 44%, rgba(5, 5, 10, 0.10), rgba(5, 5, 10, 0.72) 72%);
+        }
+
+        [data-theme="light"] .hero-results-bg {
+            opacity: 0.42;
+        }
+
+        [data-theme="light"] .hero-results-bg::after {
+            background:
+                linear-gradient(90deg, rgba(245, 243, 239, 0.96) 0%, rgba(245, 243, 239, 0.34) 28%, rgba(245, 243, 239, 0.36) 70%, rgba(245, 243, 239, 0.94) 100%),
+                linear-gradient(180deg, rgba(245, 243, 239, 0.84) 0%, rgba(245, 243, 239, 0.46) 44%, rgba(245, 243, 239, 0.92) 100%),
+                radial-gradient(circle at 50% 44%, rgba(245, 243, 239, 0.12), rgba(245, 243, 239, 0.74) 72%);
+        }
+
+        .venue {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 26px;
+            padding: 9px 16px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.07);
+            color: var(--text-main);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.11);
+        }
+
+        .venue::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #38f8bd;
+            box-shadow: 0 0 16px #38f8bd;
+        }
+
+        .title {
+            max-width: 980px;
+            margin: 0 auto 28px;
+            line-height: 1;
+            font-weight: 800;
+            letter-spacing: -0.055em;
+            text-wrap: balance;
+            color: var(--text-main);
+            text-shadow: 0 18px 70px rgba(0, 0, 0, 0.26);
+        }
+
+        .title-name {
+            display: block;
+            margin-bottom: 18px;
+            font-size: clamp(3.8rem, 8vw, 6.4rem);
+            line-height: 0.92;
+            font-weight: 900;
+            letter-spacing: -0.075em;
+            background:
+                linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.86) 58%, rgba(190, 181, 255, 0.92) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .title-subtitle {
+            display: block;
+            max-width: 900px;
+            margin: 0 auto;
+            font-size: clamp(1.55rem, 3.2vw, 2.65rem);
+            line-height: 1.12;
+            font-weight: 740;
+            letter-spacing: -0.052em;
+            color: rgba(247, 247, 251, 0.94);
+        }
+
+        [data-theme="light"] .title {
+            text-shadow: 0 18px 70px rgba(32, 28, 54, 0.12);
+        }
+
+        [data-theme="light"] .title-name {
+            background:
+                linear-gradient(180deg, #11111a 0%, rgba(18, 18, 28, 0.88) 60%, rgba(109, 93, 252, 0.88) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+        }
+
+        [data-theme="light"] .title-subtitle {
+            color: rgba(16, 16, 24, 0.86);
+        }
+
+        .authors {
+            max-width: 1060px;
+            margin: 0 auto 12px;
+            color: var(--text-main);
+            font-size: clamp(1rem, 1.55vw, 1.28rem);
+            line-height: 1.85;
+        }
+
+        .author-block {
+            margin: 0 5px;
+        }
+
+        .author-block a {
+            color: var(--text-main);
+            opacity: 0.88;
+        }
+
+        .author-block a:hover {
+            color: var(--accent-2);
+            text-decoration: none;
+            opacity: 1;
+        }
+
+        .affiliations {
+            max-width: 960px;
+            margin: 0 auto 28px;
+            color: var(--text-muted);
+            line-height: 1.8;
+        }
+
+        .pills {
+            margin: 0 auto 38px;
+        }
+
+        .pill {
+            border-color: var(--border);
+            background: rgba(255, 255, 255, 0.075);
+            color: var(--text-main);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+        }
+
+        .btn {
+            position: relative;
+            overflow: hidden;
+            min-height: 52px;
+            padding: 14px 22px;
+            border-radius: 999px;
+        }
+
+        .btn::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            transform: translateX(-120%);
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+            transition: transform 0.65s ease;
+        }
+
+        .btn:hover::before {
+            transform: translateX(120%);
+        }
+
+        .btn-primary {
+            border: 0;
+            background: linear-gradient(135deg, #ffffff, #d7d6ff 52%, #9eeaff);
+            color: #090910;
+            box-shadow: 0 18px 46px rgba(167, 139, 250, 0.24);
+        }
+
+        .btn-outline {
+            border-color: var(--border);
+            background: rgba(255, 255, 255, 0.065);
+            color: var(--text-main);
+            backdrop-filter: blur(16px);
+        }
+
+        .btn-primary:hover,
+        .btn-outline:hover {
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: var(--shadow-hover);
+            opacity: 1;
+        }
+
+        .teaser-container,
+        .abstract-box,
+        .method-diagram,
+        .tech-card,
+        .task-row,
+        .table-container,
+        .bibtex-box {
+            position: relative;
+            border: 1px solid var(--border);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.045)),
+                var(--bg-surface);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(22px);
+            -webkit-backdrop-filter: blur(22px);
+        }
+
+        .teaser-container::before,
+        .abstract-box::before,
+        .method-diagram::before,
+        .task-row::before,
+        .bibtex-box::before {
+            content: "";
+            position: absolute;
+            inset: -1px;
+            z-index: -1;
+            border-radius: inherit;
+            background: linear-gradient(135deg, rgba(167, 139, 250, 0.52), rgba(34, 211, 238, 0.28), rgba(255, 122, 217, 0.34));
+            opacity: 0;
+            transition: var(--transition);
+        }
+
+        .teaser-container:hover::before,
+        .abstract-box:hover::before,
+        .method-diagram:hover::before,
+        .task-row:hover::before,
+        .bibtex-box:hover::before {
+            opacity: 0.52;
+        }
+
+        .teaser-container {
+            border-radius: 38px;
+            margin-bottom: 0;
+            transform: perspective(1200px) rotateX(1deg);
+        }
+
+        .teaser-container video {
+            border-radius: inherit;
+        }
+
+        .abstract-box {
+            max-width: 940px;
+            padding: clamp(28px, 4vw, 48px);
+            border-radius: 32px;
+            text-align: left;
+        }
+
+        .abstract-box p {
+            color: var(--text-muted);
+            font-size: 1.08rem;
+            line-height: 1.9;
+        }
+
+        .method-diagram {
+            margin: 42px 0;
+            padding: clamp(14px, 2vw, 22px);
+            border-radius: 32px;
+        }
+
+        .method-diagram img {
+            border-radius: 24px !important;
+            border-color: var(--border) !important;
+        }
+
+        .technique-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .tech-card {
+            min-height: 210px;
+            padding: 28px;
+            border-radius: 28px;
+        }
+
+        .tech-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(34, 211, 238, 0.42);
+            box-shadow: var(--shadow-hover);
+        }
+
+        .tech-title {
+            color: var(--text-main);
+            font-size: 1.08rem;
+            letter-spacing: -0.03em;
+        }
+
+        .tech-list li {
+            color: var(--text-muted);
+        }
+
+        .tech-list li::before {
+            color: var(--accent-2);
+            text-shadow: 0 0 12px var(--accent-2);
+        }
+
+        .gallery-controls {
+            position: relative;
+            z-index: 1;
+            margin: 0 auto 34px;
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            background: rgba(8, 8, 16, 0.62);
+            box-shadow: 0 18px 58px rgba(0, 0, 0, 0.22);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+
+        [data-theme="light"] .gallery-controls {
+            background: rgba(255, 255, 255, 0.68);
+        }
+
+        .filter-bar {
+            justify-content: center;
+        }
+
+        .filter-pills {
+            flex: 1;
+            justify-content: center;
+        }
+
+        .filter-pill {
+            padding: 8px 15px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.055);
+            color: var(--text-muted);
+        }
+
+        .filter-pill:hover {
+            transform: translateY(-2px);
+            color: var(--text-main);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        .filter-pill.active {
+            border-color: transparent;
+            background: var(--text-main);
+            color: var(--bg-body);
+        }
+
+        .gallery-search {
+            width: min(280px, 70vw);
+            padding: 11px 16px;
+            border-radius: 999px;
+            border-color: var(--border);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+            outline: none;
+        }
+
+        .gallery-search::placeholder {
+            color: color-mix(in srgb, var(--text-muted) 72%, transparent);
+        }
+
+        .gallery-search:focus {
+            border-color: rgba(34, 211, 238, 0.7);
+            box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.12);
+        }
+
+        .gallery-grid {
+            gap: 26px;
+        }
+
+        .task-row {
+            overflow: hidden;
+            padding: clamp(18px, 2.4vw, 30px);
+            border-radius: 34px;
+        }
+
+        .task-row:hover {
+            transform: translateY(-5px);
+            border-color: rgba(34, 211, 238, 0.36);
+        }
+
+        .task-row-header {
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .task-heading {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .task-shorthand {
+            padding: 6px 11px;
+            border: 1px solid rgba(167, 139, 250, 0.35);
+            border-radius: 999px;
+            background: rgba(167, 139, 250, 0.14);
+            color: var(--accent-2);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            box-shadow: 0 0 22px rgba(34, 211, 238, 0.12);
+        }
+
+        .task-desc {
+            font-size: 1.25rem;
+            letter-spacing: -0.03em;
+        }
+
+        .task-meta {
+            color: var(--text-muted);
+        }
+
+        .task-prompt {
+            margin-top: 12px;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.055);
+            color: var(--text-main);
+            font-size: 0.95rem;
+            line-height: 1.55;
+        }
+
+        .task-prompt-label {
+            margin-right: 8px;
+            color: var(--accent-2);
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .task-badge {
+            height: fit-content;
+            margin-left: 12px;
+            padding: 7px 11px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--text-main);
+            font-size: 0.78rem;
+            background: rgba(255, 255, 255, 0.075);
+        }
+
+        .task-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .video-strip,
+        .video-strip-5,
+        .video-strip-6,
+        .video-strip-7 {
+            gap: 14px;
+        }
+
+        .video-slot {
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 22px;
+            background:
+                linear-gradient(135deg, rgba(167, 139, 250, 0.12), rgba(34, 211, 238, 0.08)),
+                #05050a;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            transition: var(--transition);
+        }
+
+        .video-slot:hover {
+            transform: translateY(-3px) scale(1.01);
+            border-color: rgba(34, 211, 238, 0.46);
+            box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24), 0 0 30px rgba(34, 211, 238, 0.13);
+        }
+
+        .video-label {
+            padding: 8px 10px;
+            background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.82));
+            font-size: 0.76rem;
+            letter-spacing: 0.02em;
+        }
+
+        .video-empty {
+            border: 0;
+            background: rgba(255, 255, 255, 0.045);
+        }
+
+        .gallery-case {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+            gap: 18px;
+            align-items: stretch;
+        }
+
+        .gallery-video-pair {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .gallery-instruction {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-height: 100%;
+            padding: 18px;
+            border: 1px solid var(--border);
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.055);
+        }
+
+        .gallery-instruction-label {
+            margin-bottom: 10px;
+            color: var(--accent-2);
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .gallery-instruction-text {
+            color: var(--text-main);
+            font-size: 1rem;
+            line-height: 1.55;
+        }
+
+        .visual-placeholder {
+            min-height: 320px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px dashed rgba(255, 255, 255, 0.24);
+            border-radius: 24px;
+            background:
+                linear-gradient(135deg, rgba(167, 139, 250, 0.12), rgba(34, 211, 238, 0.08)),
+                rgba(255, 255, 255, 0.045);
+            color: var(--text-muted);
+            font-weight: 700;
+            text-align: center;
+            padding: 24px;
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin: 34px 0 0;
+        }
+
+        .metric-card {
+            padding: 22px;
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.055);
+            box-shadow: var(--shadow);
+        }
+
+        .metric-card strong {
+            display: block;
+            color: var(--text-main);
+            font-size: 1.45rem;
+            line-height: 1.1;
+            letter-spacing: -0.04em;
+        }
+
+        .metric-card span {
+            display: block;
+            margin-top: 8px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .figure-stack {
+            display: grid;
+            gap: 20px;
+            width: 100%;
+        }
+
+        .figure-panel {
+            overflow: hidden;
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.055);
+        }
+
+        .figure-panel img {
+            width: 100%;
+            display: block;
+            object-fit: contain;
+        }
+
+        .figure-panel-caption {
+            padding: 12px 16px;
+            border-top: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            text-align: center;
+        }
+
+        .comparison-row {
+            padding: 16px;
+            border: 1px solid var(--border);
+            border-radius: 30px;
+            background: rgba(255, 255, 255, 0.045);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(20px);
+        }
+
+        .comparison-stack {
+            display: grid;
+            gap: 34px;
+        }
+
+        .comparison-title {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 1.05rem;
+            font-weight: 700;
+            text-align: left;
+        }
+
+        .comparison-case-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .comparison-sync-btn,
+        .gallery-sync-btn {
+            padding: 8px 14px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.075);
+            color: var(--text-main);
+            font-family: var(--font-sans);
+            font-size: 0.82rem;
+            font-weight: 800;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .comparison-sync-btn:hover,
+        .gallery-sync-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            transform: translateY(-1px);
+        }
+
+        .comparison-strip {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .comparison-source-row {
+            display: grid;
+            grid-template-columns: minmax(260px, 0.46fr) minmax(0, 1fr);
+            gap: 14px;
+            align-items: stretch;
+            margin-bottom: 14px;
+        }
+
+        .comparison-instruction {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 18px;
+            border: 1px solid var(--border);
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.055);
+        }
+
+        .comparison-instruction-label {
+            margin-bottom: 10px;
+            color: var(--accent-2);
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .comparison-instruction-text {
+            color: var(--text-main);
+            font-size: 1rem;
+            line-height: 1.55;
+        }
+
+        .comparison-strip .video-slot {
+            min-width: 0;
+        }
+
+        .comparison-strip .task-video {
+            object-fit: contain;
+            background: #000;
+        }
+
+        .table-container {
+            border-radius: 24px;
+        }
+
+        table {
+            color: var(--text-main);
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.07);
+            font-family: var(--font-sans);
+        }
+
+        tr:nth-child(even) {
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .bibtex-box {
+            border-radius: 28px;
+        }
+
+        .copy-btn {
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.10);
+            color: var(--text-main);
+        }
+
+        footer {
+            background: transparent;
+        }
+
+        @media (max-width: 1024px) {
+            .technique-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .video-strip-5 {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .video-strip-6,
+            .video-strip-7 {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .metric-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 900px) {
+            .gallery-controls {
+                position: relative;
+                top: auto;
+            }
+
+            .video-strip,
+            .video-strip-5,
+            .video-strip-6,
+            .video-strip-7 {
+                display: flex;
+                overflow-x: auto;
+                padding-bottom: 12px;
+                scroll-snap-type: x mandatory;
+            }
+
+            .video-slot {
+                min-width: 270px;
+                scroll-snap-align: start;
+            }
+
+            .gallery-case {
+                grid-template-columns: 1fr;
+            }
+
+            .gallery-video-pair {
+                display: flex;
+                overflow-x: auto;
+                padding-bottom: 12px;
+                scroll-snap-type: x mandatory;
+            }
+
+            .comparison-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .comparison-source-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .navbar {
+                top: 10px;
+                width: calc(100% - 20px);
+            }
+
+            .hero {
+                min-height: auto;
+                padding: 132px 0 72px;
+            }
+
+            .hero-results-bg {
+                gap: 14px;
+                opacity: 0.46;
+                transform: rotate(-5deg) scale(1.18);
+            }
+
+            .hero-results-row:nth-child(3) {
+                display: none;
+            }
+
+            .hero-result-card {
+                width: 230px;
+                border-radius: 18px;
+            }
+
+            h1.title {
+                max-width: 100%;
+            }
+
+            .title-name {
+                font-size: clamp(3rem, 18vw, 4.6rem);
+            }
+
+            .title-subtitle {
+                font-size: clamp(1.28rem, 7vw, 1.9rem);
+                line-height: 1.18;
+            }
+
+            h2 {
+                font-size: clamp(2.1rem, 11vw, 3rem);
+            }
+
+            .filter-bar {
+                align-items: stretch;
+            }
+
+            .filter-pills {
+                justify-content: flex-start;
+            }
+
+            .gallery-search {
+                width: 100%;
+            }
+
+            .gallery-pagination {
+                border-radius: 22px;
+                justify-content: center;
+            }
+
+            .gallery-page-status {
+                width: 100%;
+                text-align: center;
+            }
+
+            .task-row-header {
+                align-items: flex-start;
+            }
+
+            .task-actions {
+                justify-content: flex-start;
+            }
+
+            .task-badge {
+                margin-left: 0;
+            }
+
+            .gallery-video-pair {
+                display: grid;
+                grid-template-columns: 1fr;
+            }
+
+            .comparison-strip {
+                grid-template-columns: 1fr;
+            }
+
+            .metric-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body data-theme="dark">
+
+    <nav class="navbar">
+        <div class="brand-mark">
+            <img class="brand-logo" src="assets/liveedit/logo.png" alt="LiveEdit logo">
+            <span>LiveEdit</span>
+        </div>
+        <div class="nav-links">
+            <a href="#hero">Overview</a>
+            <a href="#method">Method</a>
+            <a href="#gallery">Results</a>
+            <a href="#comparison">Comparison</a>
+            <a href="#ablation">Ablation</a>
+            <a href="#citation">Citation</a>
+        </div>
+        <div style="display: flex; gap: 12px;">
+            <button class="theme-toggle" id="themeBtn" aria-label="Toggle Theme">☀</button>
+            <button class="mobile-menu-btn" aria-label="Menu">☰</button>
+        </div>
+    </nav>
+
+
+    <header class="section hero" id="hero">
+        <div class="hero-results-bg" id="heroResultsBg" aria-hidden="true"></div>
+        <div class="container fade-in-section">
+            <div class="venue">ECCV 2026 · Project Page</div>
+            <h1 class="title">
+                <span class="title-name">LiveEdit</span>
+                <span class="title-subtitle">Towards Real-Time Diffusion-Based Streaming Video Editing</span>
+            </h1>
+
+            <div class="authors">
+                <span class="author-block">Xinyu Wang<sup>1</sup></span>
+                <span class="author-block">Chongbo Zhao<sup>1</sup></span>
+                <span class="author-block">Fangneng Zhan<sup>2</sup></span>
+                <span class="author-block">Yue Ma<sup>2,†</sup></span>
+                <!-- <span class="author-block">Anyi Rao<sup>1,*</sup></span> -->
+            </div>
+
+            <div class="affiliations">
+                <span class="affil-block"><sup>1</sup>THU</span>
+                <span class="affil-block"><sup>2</sup>HKUST</span>
+            </div>
+
+            <div class="pills" aria-label="Project highlights">
+                <span class="pill">Streaming Video Editing</span>
+                <span class="pill">Causal DiT</span>
+                <span class="pill">4-Step Distillation</span>
+                <span class="pill">12.66 FPS</span>
+            </div>
+            
+            <div class="btn-group">
+                <a href="#" class="btn btn-primary" aria-disabled="true">
+                    Paper (PDF)
+                </a>
+
+                <a href="#" class="btn btn-outline" aria-disabled="true">
+                    Code(Coming Soon)
+                </a>
+
+                <!-- <a href="#" class="btn btn-outline" aria-disabled="true">
+                    Supplement
+                </a> -->
+
+                <a href="#citation" class="btn btn-outline">
+                    BibTeX
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <section class="section" id="teaser">
+        <div class="container fade-in-section">
+            <div class="teaser-container">
+                <video
+                    width="100%"
+                    height="100%"
+                    controls
+                    preload="metadata"
+                    poster="assets/liveedit/teaser_poster.jpg"
+                    style="object-fit: contain; display: block; border-radius: inherit;">
+                    <source src="assets/liveedit/teaser.mp4" type="video/mp4">
+                </video>
+            </div>
+            <div class="metric-grid">
+                <div class="metric-card"><strong>12.66 FPS</strong><span>real-time streaming inference</span></div>
+                <div class="metric-card"><strong>4 Steps</strong><span>distilled diffusion generation</span></div>
+                <div class="metric-card"><strong>Causal DiT</strong><span>chunk-wise frame processing</span></div>
+                <div class="metric-card"><strong>Mask Cache</strong><span>AR-oriented token reuse</span></div>
+            </div>
+        </div>
+    </section>
+
+
+    <section class="section" id="abstract">
+        <div class="container fade-in-section">
+            <h2>Abstract</h2>
+            <div class="abstract-box">
+                <p style="margin-bottom: 0;">
+                Streaming video editing has made rapid progress, yet practical deployment is still limited by two core issues: maintaining stable backgrounds and non-edited regions over time, and achieving the low latency required for real-time interactive scenarios. Recent streaming video generation methods are mostly developed for synthesis and cannot be directly applied to editing due to strict preservation requirements and region-specific control. We present LiveEdit, a streaming video editing framework that performs causal, frame-by-frame editing with strong content preservation and real-time responsiveness. LiveEdit uses a three-stage distillation pipeline to transfer editing capability from a powerful bidirectional foundation model to an efficient unidirectional streaming editor. To further support real-time deployment, an AR-oriented mask cache reuses region-related computation across frames, reducing redundant processing while preserving visual quality. Extensive evaluations show state-of-the-art quality among streaming baselines and 12.66 FPS inference speed.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="method">
+        <div class="container fade-in-section">
+            <h2>Method</h2>
+            
+            <div class="method-diagram" style="justify-content: center;">
+                <div class="figure-stack">
+                    <div class="figure-panel">
+                        <img src="assets/liveedit/Framework-v2_page-0001.jpg" alt="LiveEdit framework">
+                        <div class="figure-panel-caption">Three-stage distillation pipeline for streaming video editing.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="technique-grid">
+                <div class="tech-card">
+                    <span class="tech-title">Stage 1: Foundation Tuning</span>
+                    <ul class="tech-list">
+                        <li>Equips a bidirectional diffusion transformer with robust editing ability.</li>
+                        <li>Uses full temporal attention to learn high-fidelity editing priors.</li>
+                    </ul>
+                </div>
+                <div class="tech-card">
+                    <span class="tech-title">Stage 2: Causal Adaptation</span>
+                    <ul class="tech-list">
+                        <li>Transitions from bidirectional processing to chunk-wise causal attention.</li>
+                        <li>Uses teacher forcing to preserve editing quality under streaming constraints.</li>
+                    </ul>
+                </div>
+                <div class="tech-card">
+                    <span class="tech-title">Stage 3: DMD Distillation + Cache</span>
+                    <ul class="tech-list">
+                        <li>Compresses generation to 4 diffusion steps for low latency.</li>
+                        <li>Reuses masked background tokens to avoid redundant computation.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="gallery">
+        <div class="container fade-in-section">
+            <h2>Results Gallery</h2>
+            <p style="text-align: center; margin-bottom: 30px;">Representative real-time editing cases with source video, target video, and editing instruction.</p>
+
+            <div class="gallery-controls">
+                <div class="filter-bar">
+                    <div class="filter-pills" id="categoryFilters">
+                        <div class="filter-pill active" data-category="All" onclick="filterGallery('All')">All Cases</div>
+                        <div class="filter-pill" data-category="Local" onclick="filterGallery('Local')">Local Edit</div>
+                        <div class="filter-pill" data-category="Global" onclick="filterGallery('Global')">Global Edit</div>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" class="gallery-search" placeholder="Search cases..." onkeyup="searchGallery(this.value)">
+                    </div>
+                </div>
+            </div>
+
+            <div class="gallery-grid" id="galleryGrid">
+                </div>
+            <div class="gallery-pagination" id="galleryPagination"></div>
+        </div>
+    </section>
+
+    <section class="section" id="comparison">
+        <div class="container fade-in-section">
+            <h2>Comparison</h2>
+            <div class="comparison-stack">
+
+                <div>
+                    <div class="comparison-case-header">
+                        <h3 class="comparison-title">Cat fur edit: baseline comparison</h3>
+                        <button class="comparison-sync-btn" type="button" onclick="toggleComparisonPlayback('cat', this)">Play Together</button>
+                    </div>
+                    <div class="comparison-row" data-comparison-group="cat">
+                        <div class="comparison-source-row">
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/cat_source.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">Source</div>
+                            </div>
+                            <div class="comparison-instruction">
+                                <div class="comparison-instruction-label">Instruction</div>
+                                <div class="comparison-instruction-text">Change the cat’s fur from dark and light patches to solid snowy white with blue eyes.</div>
+                            </div>
+                        </div>
+                        <div class="comparison-strip">
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/cat_insv2v.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">InsV2V</div>
+                            </div>
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/cat_lucyedit.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">LucyEdit</div>
+                            </div>
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/cat_videocof.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">VideoCoF</div>
+                            </div>
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/cat_streamdiffusion.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">StreamDiffusion</div>
+                            </div>
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/cat_streamv2v.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">StreamV2V</div>
+                            </div>
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/cat_ours.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">Ours</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="comparison-case-header">
+                        <h3 class="comparison-title">Forest lighting edit: baseline comparison</h3>
+                        <button class="comparison-sync-btn" type="button" onclick="toggleComparisonPlayback('forest', this)">Play Together</button>
+                    </div>
+                    <div class="comparison-row" data-comparison-group="forest">
+                        <div class="comparison-source-row">
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/forest_source.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">Source</div>
+                            </div>
+                            <div class="comparison-instruction">
+                                <div class="comparison-instruction-label">Instruction</div>
+                                <div class="comparison-instruction-text">Replace the dappled sunlight with beams of pale lavender light piercing through the canopy.</div>
+                            </div>
+                        </div>
+                        <div class="comparison-strip">
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/forest_insv2v.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">InsV2V</div>
+                            </div>
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/forest_lucyedit.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">LucyEdit</div>
+                            </div>
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/forest_videocof.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">VideoCoF</div>
+                            </div>
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/forest_streamdiffusion.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">StreamDiffusion</div>
+                            </div>
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/forest_streamv2v.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">StreamV2V</div>
+                            </div>
+                            <div class="video-slot">
+                                <video src="assets/liveedit/keynote/forest_ours.mp4" class="task-video" controls preload="metadata" playsinline loop></video>
+                                <div class="video-label">Ours</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="ablation">
+        <div class="container fade-in-section">
+            <h2>Ablation</h2>
+            <div class="method-diagram" style="justify-content: center; margin-bottom: 40px;">
+                <div class="figure-stack">
+                    <div class="figure-panel">
+                        <img src="assets/liveedit/cache_layer.png" alt="LiveEdit mask cache layer">
+                        <div class="figure-panel-caption">AR-oriented mask cache for selective token reuse.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+
+
+
+    <section class="section" id="citation">
+        <div class="container fade-in-section">
+            <h2>Citation</h2>
+            <div class="bibtex-box">
+                <button class="copy-btn" onclick="copyBibtex()">Copy</button>
+<pre id="bibtexText">@inproceedings{liveedit2026,
+  title     = {LiveEdit: Towards Real-Time Diffusion-Based Streaming Video Editing},
+  author    = {Anonymous},
+  booktitle = {European Conference on Computer Vision},
+  year      = {2026}
+}</pre>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 LiveEdit Project. All rights reserved.</p>
+        </div>
+    </footer>
+
+<script>
+        const LIVEEDIT_TASKS = [
+            {
+                id: "l1",
+                short: "CASE-01",
+                cat: "Local",
+                desc: "Change cat fur to snowy white with blue eyes",
+                input: "Source stream + edit prompt",
+                output: "Edited stream",
+                prompt: "Change the cat's fur from dark and light patches to solid snowy white with blue eyes.",
+                source: "assets/liveedit/keynote/cat_source.mp4",
+                target: "assets/liveedit/keynote/cat_ours.mp4"
+            },
+            {
+                id: "l2",
+                short: "CASE-02",
+                cat: "Global",
+                desc: "Replace forest dappled sunlight with lavender beams",
+                input: "Source stream + edit prompt",
+                output: "Edited stream",
+                prompt: "Replace the dappled sunlight with beams of pale lavender light piercing through the canopy.",
+                source: "assets/liveedit/keynote/forest_source.mp4",
+                target: "assets/liveedit/keynote/forest_ours.mp4"
+            },
+            {
+                id: "l3",
+                short: "CASE-03",
+                cat: "Local",
+                desc: "Add a stationary face mask in causal streaming mode",
+                input: "Source stream + local edit instruction",
+                output: "Causal edited stream",
+                prompt: "Add the white face mask covering the lower face, remaining stationary on the subject's face.",
+                source: "assets/liveedit/keynote/mask_source.mp4",
+                target: "assets/liveedit/keynote/mask_causal.mp4"
+            },
+            {
+                id: "l4",
+                short: "CASE-04",
+                cat: "Local",
+                desc: "Transform a black ladle into an engraved gold one",
+                input: "Source stream + object edit prompt",
+                output: "Edited stream",
+                prompt: "Transform the black ladle into a solid gold one with intricate engravings along the handle.",
+                source: "assets/liveedit/keynote/gold_ladle_source.mp4",
+                target: "assets/liveedit/keynote/gold_ladle_ours.mp4"
+            },
+            {
+                id: "l5",
+                short: "CASE-05",
+                cat: "Global",
+                desc: "Apply a cool mist atmosphere",
+                input: "Source stream + edit prompt",
+                output: "Edited stream",
+                prompt: "Turn the scene into a cool misty atmosphere while preserving the subject motion.",
+                source: "assets/liveedit/keynote/cool_mist_source.mp4",
+                target: "assets/liveedit/keynote/cool_mist_ours.mp4"
+            },
+            {
+                "id": "q1",
+                "short": "CASE-06",
+                "cat": "Local",
+                "desc": "Alter the horse’s dark brown coat to a silvery white",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Alter the horse’s dark brown coat to a silvery white with a frosty sheen.",
+                "source": "assets/liveedit/gallery/source/Alter_the_horse’s_dark_brown_coat_to_a_silvery_white_with_a_frosty_sheen..mp4",
+                "target": "assets/liveedit/gallery/ours/Alter_the_horse’s_dark_brown_coat_to_a_silvery_white_with_a_frosty_sheen..mp4"
+            },
+            {
+                "id": "q4",
+                "short": "CASE-07",
+                "cat": "Global",
+                "desc": "Change the blue sky to a gradient of deep indigo and magenta",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the blue sky to a gradient of deep indigo and magenta with faint constellations.",
+                "source": "assets/liveedit/gallery/source/Change_the_blue_sky_to_a_gradient_of_deep_indigo_and_magenta_with_faint_constellations..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_blue_sky_to_a_gradient_of_deep_indigo_and_magenta_with_faint_constellations..mp4"
+            },
+            {
+                "id": "q5",
+                "short": "CASE-08",
+                "cat": "Local",
+                "desc": "Change the brown horse to a dappled gray mare",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the brown horse to a dappled gray mare with a white star on its forehead.",
+                "source": "assets/liveedit/gallery/source/Change_the_brown_horse_to_a_dappled_gray_mare_with_a_white_star_on_its_forehead..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_brown_horse_to_a_dappled_gray_mare_with_a_white_star_on_its_forehead..mp4"
+            },
+            {
+                "id": "q6",
+                "short": "CASE-09",
+                "cat": "Global",
+                "desc": "Change the calm water’s surface",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the calm water’s surface to reflect a fiery orange and gold sunset.",
+                "source": "assets/liveedit/gallery/source/Change_the_calm_water’s_surface_to_reflect_a_fiery_orange_and_gold_sunset..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_calm_water’s_surface_to_reflect_a_fiery_orange_and_gold_sunset..mp4"
+            },
+            {
+                "id": "q7",
+                "short": "CASE-10",
+                "cat": "Local",
+                "desc": "Change the cat’s fur to solid snowy white with blue eyes",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the cat’s fur from dark and light patches to solid snowy white with blue eyes.",
+                "source": "assets/liveedit/gallery/source/Change_the_cat’s_fur_from_dark_and_light_patches_to_solid_snowy_white_with_blue_eyes..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_cat’s_fur_from_dark_and_light_patches_to_solid_snowy_white_with_blue_eyes..mp4"
+            },
+            {
+                "id": "q8",
+                "short": "CASE-11",
+                "cat": "Local",
+                "desc": "Change the child's green sweater to a bright yellow one",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the child's green sweater to a bright yellow one.",
+                "source": "assets/liveedit/gallery/source/Change_the_child's_green_sweater_to_a_bright_yellow_one..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_child's_green_sweater_to_a_bright_yellow_one..mp4"
+            },
+            {
+                "id": "q9",
+                "short": "CASE-12",
+                "cat": "Local",
+                "desc": "Change the child’s white shirt to a navy-blue onesie",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the child’s white shirt to a navy-blue onesie with tiny embroidered stars.",
+                "source": "assets/liveedit/gallery/source/Change_the_child’s_white_shirt_to_a_navy-blue_onesie_with_tiny_embroidered_stars..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_child’s_white_shirt_to_a_navy-blue_onesie_with_tiny_embroidered_stars..mp4"
+            },
+            {
+                "id": "q10",
+                "short": "CASE-13",
+                "cat": "Global",
+                "desc": "Change the clear blue sky to lavender and peach",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the clear blue sky to a gradient of soft lavender and peach, mimicking a surreal sunset.",
+                "source": "assets/liveedit/gallery/source/Change_the_clear_blue_sky_to_a_gradient_of_soft_lavender_and_peach,_mimicking_a_surreal_sunset..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_clear_blue_sky_to_a_gradient_of_soft_lavender_and_peach,_mimicking_a_surreal_sunset..mp4"
+            },
+            {
+                "id": "q11",
+                "short": "CASE-14",
+                "cat": "Local",
+                "desc": "Change the dark shorts to navy blue gym shorts",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the dark shorts to navy blue gym shorts with a reflective stripe on the side.",
+                "source": "assets/liveedit/gallery/source/Change_the_dark_shorts_to_navy_blue_gym_shorts_with_a_reflective_stripe_on_the_side..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_dark_shorts_to_navy_blue_gym_shorts_with_a_reflective_stripe_on_the_side..mp4"
+            },
+            {
+                "id": "q12",
+                "short": "CASE-15",
+                "cat": "Global",
+                "desc": "Change the dark tree trunks to a silvery-gray color",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the dark tree trunks to a silvery-gray color to reflect the misty, ethereal atmosphere.",
+                "source": "assets/liveedit/gallery/source/Change_the_dark_tree_trunks_to_a_silvery-gray_color_to_reflect_the_misty,_ethereal_atmosphere..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_dark_tree_trunks_to_a_silvery-gray_color_to_reflect_the_misty,_ethereal_atmosphere..mp4"
+            },
+            {
+                "id": "q13",
+                "short": "CASE-16",
+                "cat": "Local",
+                "desc": "Change donut glazes to metallic silver and purple",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the donuts’ glazes to metallic silver and iridescent purple hues.",
+                "source": "assets/liveedit/gallery/source/Change_the_donuts’_glazes_to_metallic_silver_and_iridescent_purple_hues..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_donuts’_glazes_to_metallic_silver_and_iridescent_purple_hues..mp4"
+            },
+            {
+                "id": "q14",
+                "short": "CASE-17",
+                "cat": "Local",
+                "desc": "Change giraffe spots to shifting kaleidoscope colors",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the giraffe’s spotted pattern to a dynamic, shifting kaleidoscope of colors that move with its motion.",
+                "source": "assets/liveedit/gallery/source/Change_the_giraffe’s_spotted_pattern_to_a_dynamic,_shifting_kaleidoscope_of_colors_that_move_with_it.mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_giraffe’s_spotted_pattern_to_a_dynamic,_shifting_kaleidoscope_of_colors_that_move_with_it.mp4"
+            },
+            {
+                "id": "q15",
+                "short": "CASE-18",
+                "cat": "Local",
+                "desc": "Change the glasses to gold-rimmed frames",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the glasses to gold-rimmed frames with a slight tint, reflecting the sunlight.",
+                "source": "assets/liveedit/gallery/source/Change_the_glasses_to_gold-rimmed_frames_with_a_slight_tint,_reflecting_the_sunlight..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_glasses_to_gold-rimmed_frames_with_a_slight_tint,_reflecting_the_sunlight..mp4"
+            },
+            {
+                "id": "q16",
+                "short": "CASE-19",
+                "cat": "Local",
+                "desc": "Change the glasses to sleek, silver-rimmed ones",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the glasses to sleek, silver-rimmed ones that reflect the fluorescent lighting.",
+                "source": "assets/liveedit/gallery/source/Change_the_glasses_to_sleek,_silver-rimmed_ones_that_reflect_the_fluorescent_lighting..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_glasses_to_sleek,_silver-rimmed_ones_that_reflect_the_fluorescent_lighting..mp4"
+            },
+            {
+                "id": "q17",
+                "short": "CASE-20",
+                "cat": "Local",
+                "desc": "Change the leather jacket to a holographic version",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the leather jacket to a translucent, holographic version that shifts color with movement.",
+                "source": "assets/liveedit/gallery/source/Change_the_leather_jacket_to_a_translucent,_holographic_version_that_shifts_color_with_movement..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_leather_jacket_to_a_translucent,_holographic_version_that_shifts_color_with_movement..mp4"
+            },
+            {
+                "id": "q18",
+                "short": "CASE-21",
+                "cat": "Local",
+                "desc": "Change shoreline pants to white linen",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the light-colored pants of the person on the shoreline to a crisp white linen pair with a slight sheen.",
+                "source": "assets/liveedit/gallery/source/Change_the_light-colored_pants_of_the_person_on_the_shoreline_to_a_crisp_white_linen_pair_with_a_sli.mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_light-colored_pants_of_the_person_on_the_shoreline_to_a_crisp_white_linen_pair_with_a_sli.mp4"
+            },
+            {
+                "id": "q19",
+                "short": "CASE-22",
+                "cat": "Local",
+                "desc": "Change the light brown granite countertops to a white marble",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the light brown granite countertops to a white marble with dark gray veining.",
+                "source": "assets/liveedit/gallery/source/Change_the_light_brown_granite_countertops_to_a_white_marble_with_dark_gray_veining..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_light_brown_granite_countertops_to_a_white_marble_with_dark_gray_veining..mp4"
+            },
+            {
+                "id": "q20",
+                "short": "CASE-23",
+                "cat": "Local",
+                "desc": "Change the long dreadlocks to flowing silver hair",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the long dreadlocks to flowing silver hair that glimmers under the sunlight like liquid metal.",
+                "source": "assets/liveedit/gallery/source/Change_the_long_dreadlocks_to_flowing_silver_hair_that_glimmers_under_the_sunlight_like_liquid_metal.mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_long_dreadlocks_to_flowing_silver_hair_that_glimmers_under_the_sunlight_like_liquid_metal.mp4"
+            },
+            {
+                "id": "q21",
+                "short": "CASE-24",
+                "cat": "Local",
+                "desc": "Change the man’s expression to playful distraction",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the man’s facial expression to one of playful distraction, with a half-smile and raised eyebrow.",
+                "source": "assets/liveedit/gallery/source/Change_the_man’s_facial_expression_to_one_of_playful_distraction,_with_a_half-smile_and_raised_eyebr.mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_man’s_facial_expression_to_one_of_playful_distraction,_with_a_half-smile_and_raised_eyebr.mp4"
+            },
+            {
+                "id": "q22",
+                "short": "CASE-25",
+                "cat": "Local",
+                "desc": "Change the plaid shirt to a holographic pattern",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the plaid shirt of the central figure to a holographic pattern that shifts colors with movement.",
+                "source": "assets/liveedit/gallery/source/Change_the_plaid_shirt_of_the_central_figure_to_a_holographic_pattern_that_shifts_colors_with_moveme.mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_plaid_shirt_of_the_central_figure_to_a_holographic_pattern_that_shifts_colors_with_moveme.mp4"
+            },
+            {
+                "id": "q23",
+                "short": "CASE-26",
+                "cat": "Local",
+                "desc": "Change the red currants to deep purple grapes",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the red currants to deep purple grapes with a thin layer of frost on their skins.",
+                "source": "assets/liveedit/gallery/source/Change_the_red_currants_to_deep_purple_grapes_with_a_thin_layer_of_frost_on_their_skins..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_red_currants_to_deep_purple_grapes_with_a_thin_layer_of_frost_on_their_skins..mp4"
+            },
+            {
+                "id": "q24",
+                "short": "CASE-27",
+                "cat": "Local",
+                "desc": "Change the reddish-brown hair in the ponytail to silvery white",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the reddish-brown hair in the ponytail to silvery white with soft highlights.",
+                "source": "assets/liveedit/gallery/source/Change_the_reddish-brown_hair_in_the_ponytail_to_silvery_white_with_soft_highlights..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_reddish-brown_hair_in_the_ponytail_to_silvery_white_with_soft_highlights..mp4"
+            },
+            {
+                "id": "q25",
+                "short": "CASE-28",
+                "cat": "Local",
+                "desc": "Change the soft pink hydrangeas to deep magenta ones",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the soft pink hydrangeas to deep magenta ones with darker veins.",
+                "source": "assets/liveedit/gallery/source/Change_the_soft_pink_hydrangeas_to_deep_magenta_ones_with_darker_veins..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_soft_pink_hydrangeas_to_deep_magenta_ones_with_darker_veins..mp4"
+            },
+            {
+                "id": "q26",
+                "short": "CASE-29",
+                "cat": "Local",
+                "desc": "Change irregular rocks into polished black basalt",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the surrounding irregular rocks into smooth, polished black basalt with mirrored surfaces.",
+                "source": "assets/liveedit/gallery/source/Change_the_surrounding_irregular_rocks_into_smooth,_polished_black_basalt_with_mirrored_surfaces..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_surrounding_irregular_rocks_into_smooth,_polished_black_basalt_with_mirrored_surfaces..mp4"
+            },
+            {
+                "id": "q27",
+                "short": "CASE-30",
+                "cat": "Local",
+                "desc": "Change the white blouse to deep violet",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the white blouse of the central woman to a deep violet one with a high collar.",
+                "source": "assets/liveedit/gallery/source/Change_the_white_blouse_of_the_central_woman_to_a_deep_violet_one_with_a_high_collar..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_white_blouse_of_the_central_woman_to_a_deep_violet_one_with_a_high_collar..mp4"
+            },
+            {
+                "id": "q28",
+                "short": "CASE-31",
+                "cat": "Local",
+                "desc": "Change the white chef's jacket to a dark charcoal-gray one",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Change the white chef's jacket to a dark charcoal-gray one with gold buttons.",
+                "source": "assets/liveedit/gallery/source/Change_the_white_chef's_jacket_to_a_dark_charcoal-gray_one_with_gold_buttons..mp4",
+                "target": "assets/liveedit/gallery/ours/Change_the_white_chef's_jacket_to_a_dark_charcoal-gray_one_with_gold_buttons..mp4"
+            },
+            {
+                "id": "q30",
+                "short": "CASE-32",
+                "cat": "Local",
+                "desc": "Replace the blue fabric being sewn",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Replace the blue fabric being sewn with a shimmering gold satin that glimmers under the light.",
+                "source": "assets/liveedit/gallery/source/Replace_the_blue_fabric_being_sewn_with_a_shimmering_gold_satin_that_glimmers_under_the_light..mp4",
+                "target": "assets/liveedit/gallery/ours/Replace_the_blue_fabric_being_sewn_with_a_shimmering_gold_satin_that_glimmers_under_the_light..mp4"
+            },
+            {
+                "id": "q31",
+                "short": "CASE-33",
+                "cat": "Global",
+                "desc": "Replace the dappled sunlight",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Replace the dappled sunlight with beams of pale lavender light piercing through the canopy.",
+                "source": "assets/liveedit/gallery/source/Replace_the_dappled_sunlight_with_beams_of_pale_lavender_light_piercing_through_the_canopy..mp4",
+                "target": "assets/liveedit/gallery/ours/Replace_the_dappled_sunlight_with_beams_of_pale_lavender_light_piercing_through_the_canopy..mp4"
+            },
+            {
+                "id": "q32",
+                "short": "CASE-34",
+                "cat": "Local",
+                "desc": "Replace the dark brown sweater",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Replace the dark brown sweater with a light gray cable-knit sweater.",
+                "source": "assets/liveedit/gallery/source/Replace_the_dark_brown_sweater_with_a_light_gray_cable-knit_sweater..mp4",
+                "target": "assets/liveedit/gallery/ours/Replace_the_dark_brown_sweater_with_a_light_gray_cable-knit_sweater..mp4"
+            },
+            {
+                "id": "q33",
+                "short": "CASE-35",
+                "cat": "Local",
+                "desc": "Replace the dog’s dark collar",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Replace the dog’s dark collar with a bright red leather one with a silver tag.",
+                "source": "assets/liveedit/gallery/source/Replace_the_dog’s_dark_collar_with_a_bright_red_leather_one_with_a_silver_tag..mp4",
+                "target": "assets/liveedit/gallery/ours/Replace_the_dog’s_dark_collar_with_a_bright_red_leather_one_with_a_silver_tag..mp4"
+            },
+            {
+                "id": "q34",
+                "short": "CASE-36",
+                "cat": "Local",
+                "desc": "Replace the floral pattern on the outfit",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Replace the floral pattern on the outfit with a geometric design in deep crimson and gold.",
+                "source": "assets/liveedit/gallery/source/Replace_the_floral_pattern_on_the_outfit_with_a_geometric_design_in_deep_crimson_and_gold..mp4",
+                "target": "assets/liveedit/gallery/ours/Replace_the_floral_pattern_on_the_outfit_with_a_geometric_design_in_deep_crimson_and_gold..mp4"
+            },
+            {
+                "id": "q35",
+                "short": "CASE-37",
+                "cat": "Local",
+                "desc": "Replace the light beige wood tones",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Replace the light beige wood tones with deep walnut, enhancing the richness of the grain.",
+                "source": "assets/liveedit/gallery/source/Replace_the_light_beige_wood_tones_with_deep_walnut,_enhancing_the_richness_of_the_grain..mp4",
+                "target": "assets/liveedit/gallery/ours/Replace_the_light_beige_wood_tones_with_deep_walnut,_enhancing_the_richness_of_the_grain..mp4"
+            },
+            {
+                "id": "q36",
+                "short": "CASE-38",
+                "cat": "Local",
+                "desc": "Replace the man’s striped scarf",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Replace the man’s striped scarf with a solid emerald green one.",
+                "source": "assets/liveedit/gallery/source/Replace_the_man’s_striped_scarf_with_a_solid_emerald_green_one..mp4",
+                "target": "assets/liveedit/gallery/ours/Replace_the_man’s_striped_scarf_with_a_solid_emerald_green_one..mp4"
+            },
+            {
+                "id": "q37",
+                "short": "CASE-39",
+                "cat": "Local",
+                "desc": "Replace the maroon button-up shirt",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Replace the maroon button-up shirt with a silver sequined jacket that sparkles under the light.",
+                "source": "assets/liveedit/gallery/source/Replace_the_maroon_button-up_shirt_with_a_silver_sequined_jacket_that_sparkles_under_the_light..mp4",
+                "target": "assets/liveedit/gallery/ours/Replace_the_maroon_button-up_shirt_with_a_silver_sequined_jacket_that_sparkles_under_the_light..mp4"
+            },
+            {
+                "id": "q38",
+                "short": "CASE-40",
+                "cat": "Global",
+                "desc": "Replace the orange and red fallen leaves",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Replace the orange and red fallen leaves with iridescent blue and silver leaves that shimmer under the mist.",
+                "source": "assets/liveedit/gallery/source/Replace_the_orange_and_red_fallen_leaves_with_iridescent_blue_and_silver_leaves_that_shimmer_under_t.mp4",
+                "target": "assets/liveedit/gallery/ours/Replace_the_orange_and_red_fallen_leaves_with_iridescent_blue_and_silver_leaves_that_shimmer_under_t.mp4"
+            },
+            {
+                "id": "q39",
+                "short": "CASE-41",
+                "cat": "Global",
+                "desc": "Transform the calm water into a mirror-like surface",
+                "input": "Source video + edit instruction",
+                "output": "Target video",
+                "prompt": "Transform the calm water into a mirror-like surface that reflects the sky in perfect, inverted clarity.",
+                "source": "assets/liveedit/gallery/source/Transform_the_calm_water_into_a_mirror-like_surface_that_reflects_the_sky_in_perfect,_inverted_clari.mp4",
+                "target": "assets/liveedit/gallery/ours/Transform_the_calm_water_into_a_mirror-like_surface_that_reflects_the_sky_in_perfect,_inverted_clari.mp4"
+            }
+        ];
+
+        const HERO_CLIPS = [
+            "assets/liveedit/keynote/cat_ours.mp4",
+            "assets/liveedit/keynote/forest_ours.mp4",
+            "assets/liveedit/keynote/sky_edit.mp4",
+            "assets/liveedit/keynote/water_edit.mp4",
+            "assets/liveedit/keynote/horse_edit.mp4",
+            "assets/liveedit/keynote/donuts_edit.mp4",
+            "assets/liveedit/keynote/jacket_edit.mp4",
+            "assets/liveedit/keynote/hair_edit.mp4",
+            "assets/liveedit/keynote/chef_edit.mp4",
+            "assets/liveedit/keynote/mask_causal.mp4",
+            "assets/liveedit/keynote/gold_ladle_ours.mp4",
+            "assets/liveedit/keynote/cool_mist_ours.mp4"
+        ];
+
+        let currentFilter = "All";
+        let currentSearch = "";
+        let currentPage = 1;
+        const galleryPageSize = 5;
+
+        function populateHeroResults() {
+            const mount = document.getElementById("heroResultsBg");
+            if (!mount) return;
+            const rows = [HERO_CLIPS.slice(0, 4), HERO_CLIPS.slice(4, 8), HERO_CLIPS.slice(8, 12)];
+            mount.innerHTML = rows.map(rowClips => {
+                const doubled = [...rowClips, ...rowClips, ...rowClips];
+                return `
+                    <div class="hero-results-row">
+                        ${doubled.map(src => `
+                            <div class="hero-result-card">
+                                <video src="${src}" autoplay muted loop playsinline preload="metadata"></video>
+                            </div>
+                        `).join("")}
+                    </div>
+                `;
+            }).join("");
+        }
+
+        function getCurrentTasks() {
+            return LIVEEDIT_TASKS;
+        }
+
+        function renderGallery() {
+            const grid = document.getElementById("galleryGrid");
+            const pagination = document.getElementById("galleryPagination");
+            grid.innerHTML = "";
+            const filtered = getCurrentTasks().filter(task => {
+                const matchesCat = currentFilter === "All" || task.cat === currentFilter;
+                const search = currentSearch.toLowerCase();
+                const matchesSearch = task.short.toLowerCase().includes(search) || task.desc.toLowerCase().includes(search) || task.prompt.toLowerCase().includes(search);
+                return matchesCat && matchesSearch;
+            });
+
+            if (filtered.length === 0) {
+                grid.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-muted);">No cases found.</div>';
+                if (pagination) pagination.innerHTML = "";
+                return;
+            }
+
+            const totalPages = Math.ceil(filtered.length / galleryPageSize);
+            currentPage = Math.min(Math.max(currentPage, 1), totalPages);
+            const pageStart = (currentPage - 1) * galleryPageSize;
+            const pageItems = filtered.slice(pageStart, pageStart + galleryPageSize);
+
+            pageItems.forEach(task => {
+                const row = document.createElement("div");
+                row.className = "task-row";
+                row.dataset.galleryCase = task.id;
+
+                const headerHtml = `
+                    <div class="task-row-header">
+                        <div class="task-info" style="flex: 1; min-width: 0;">
+                            <div class="task-heading">
+                                <div class="task-shorthand">${task.short}</div>
+                                <div class="task-desc">${task.desc}</div>
+                            </div>
+                            <div class="task-meta">In: ${task.input} -> Out: ${task.output}</div>
+                        </div>
+                        <div class="task-actions">
+                            <button class="gallery-sync-btn" type="button" onclick="toggleGalleryPlayback('${task.id}', this)">Play Together</button>
+                            <div class="task-badge">${task.cat}</div>
+                        </div>
+                    </div>
+                `;
+
+                const sourceVideo = task.source
+                    ? `<video src="${task.source}" class="task-video" controls playsinline loop preload="metadata"></video>`
+                    : `<div class="video-empty">Source Video</div>`;
+                const targetVideo = task.target
+                    ? `<video src="${task.target}" class="task-video" controls playsinline loop preload="metadata"></video>`
+                    : `<div class="video-empty">Target Video</div>`;
+
+                row.innerHTML = `
+                    ${headerHtml}
+                    <div class="gallery-case">
+                        <div class="gallery-video-pair">
+                            <div class="video-slot">
+                                ${sourceVideo}
+                                <div class="video-label">Source Video</div>
+                            </div>
+                            <div class="video-slot">
+                                ${targetVideo}
+                                <div class="video-label">Target Video</div>
+                            </div>
+                        </div>
+                        <div class="gallery-instruction">
+                            <div class="gallery-instruction-label">Instruction</div>
+                            <div class="gallery-instruction-text">“${task.prompt}”</div>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(row);
+            });
+
+            if (pagination) {
+                const first = pageStart + 1;
+                const last = pageStart + pageItems.length;
+                const pageWindowStart = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+                const pageWindowEnd = Math.min(totalPages, pageWindowStart + 4);
+                const pageButtons = [];
+                for (let page = pageWindowStart; page <= pageWindowEnd; page += 1) {
+                    pageButtons.push(`
+                        <button class="gallery-page-btn ${page === currentPage ? "active" : ""}" onclick="goToGalleryPage(${page})" ${page === currentPage ? "disabled" : ""}>${page}</button>
+                    `);
+                }
+                pagination.innerHTML = `
+                    <span class="gallery-page-status">${first}-${last} of ${filtered.length} cases</span>
+                    <div class="gallery-page-controls">
+                        <button class="gallery-page-btn" onclick="goToGalleryPage(1)" ${currentPage === 1 ? "disabled" : ""}>First</button>
+                        <button class="gallery-page-btn" onclick="changeGalleryPage(-1)" ${currentPage === 1 ? "disabled" : ""}>Prev</button>
+                        ${pageButtons.join("")}
+                        <button class="gallery-page-btn" onclick="changeGalleryPage(1)" ${currentPage === totalPages ? "disabled" : ""}>Next</button>
+                        <button class="gallery-page-btn" onclick="goToGalleryPage(${totalPages})" ${currentPage === totalPages ? "disabled" : ""}>Last</button>
+                    </div>
+                `;
+            }
+        }
+
+        function goToGalleryPage(page) {
+            currentPage = page;
+            renderGallery();
+            document.getElementById("gallery")?.scrollIntoView({behavior: "smooth", block: "start"});
+        }
+
+        function changeGalleryPage(delta) {
+            goToGalleryPage(currentPage + delta);
+        }
+
+        function filterGallery(category) {
+            currentFilter = category;
+            currentPage = 1;
+            document.querySelectorAll(".filter-pill").forEach(el => {
+                el.classList.toggle("active", el.getAttribute("data-category") === category);
+            });
+            renderGallery();
+        }
+
+        function searchGallery(val) {
+            currentSearch = val;
+            currentPage = 1;
+            renderGallery();
+        }
+
+        function toggleComparisonPlayback(group, button) {
+            const row = document.querySelector(`[data-comparison-group="${group}"]`);
+            if (!row) return;
+            const videos = Array.from(row.querySelectorAll("video"));
+            const isPlaying = button.dataset.playing === "true";
+
+            document.querySelectorAll("[data-gallery-case] video").forEach(video => video.pause());
+            document.querySelectorAll(".gallery-sync-btn").forEach(btn => {
+                btn.dataset.playing = "false";
+                btn.textContent = "Play Together";
+            });
+            document.querySelectorAll("[data-comparison-group] video").forEach(video => {
+                if (!videos.includes(video)) video.pause();
+            });
+            document.querySelectorAll(".comparison-sync-btn").forEach(btn => {
+                if (btn !== button) {
+                    btn.dataset.playing = "false";
+                    btn.textContent = "Play Together";
+                }
+            });
+
+            if (isPlaying) {
+                videos.forEach(video => video.pause());
+                button.dataset.playing = "false";
+                button.textContent = "Play Together";
+                return;
+            }
+
+            videos.forEach(video => {
+                video.pause();
+                video.currentTime = 0;
+            });
+            requestAnimationFrame(() => {
+                videos.forEach(video => {
+                    const playPromise = video.play();
+                    if (playPromise) playPromise.catch(() => {});
+                });
+            });
+            button.dataset.playing = "true";
+            button.textContent = "Pause Together";
+        }
+
+        function toggleGalleryPlayback(caseId, button) {
+            const row = document.querySelector(`[data-gallery-case="${caseId}"]`);
+            if (!row) return;
+            const videos = Array.from(row.querySelectorAll("video"));
+            const isPlaying = button.dataset.playing === "true";
+
+            document.querySelectorAll("[data-comparison-group] video").forEach(video => video.pause());
+            document.querySelectorAll(".comparison-sync-btn").forEach(btn => {
+                btn.dataset.playing = "false";
+                btn.textContent = "Play Together";
+            });
+            document.querySelectorAll("[data-gallery-case] video").forEach(video => {
+                if (!videos.includes(video)) video.pause();
+            });
+            document.querySelectorAll(".gallery-sync-btn").forEach(btn => {
+                if (btn !== button) {
+                    btn.dataset.playing = "false";
+                    btn.textContent = "Play Together";
+                }
+            });
+
+            if (isPlaying) {
+                videos.forEach(video => video.pause());
+                button.dataset.playing = "false";
+                button.textContent = "Play Together";
+                return;
+            }
+
+            videos.forEach(video => {
+                video.pause();
+                video.currentTime = 0;
+            });
+            requestAnimationFrame(() => {
+                videos.forEach(video => {
+                    const playPromise = video.play();
+                    if (playPromise) playPromise.catch(() => {});
+                });
+            });
+            button.dataset.playing = "true";
+            button.textContent = "Pause Together";
+        }
+
+        function copyBibtex() {
+            const text = document.getElementById("bibtexText").innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector(".copy-btn");
+                const orig = btn.innerText;
+                btn.innerText = "Copied!";
+                setTimeout(() => btn.innerText = orig, 2000);
+            });
+        }
+
+        const themeBtn = document.getElementById("themeBtn");
+        themeBtn.addEventListener("click", () => {
+            const body = document.body;
+            if (body.getAttribute("data-theme") === "light") {
+                body.setAttribute("data-theme", "dark");
+                themeBtn.innerText = "☀";
+            } else {
+                body.setAttribute("data-theme", "light");
+                themeBtn.innerText = "☾";
+            }
+        });
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) entry.target.classList.add("is-visible");
+            });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll(".fade-in-section").forEach(section => observer.observe(section));
+        populateHeroResults();
+        renderGallery();
+    </script>
+</body>
+</html>
